@@ -1,0 +1,44 @@
+diff --git a/dlls/winemac.drv/window.c b/dlls/winemac.drv/window.c
+index 64a864a..9e2e411 100644
+--- a/dlls/winemac.drv/window.c
++++ b/dlls/winemac.drv/window.c
+@@ -1663,6 +1663,30 @@ void macdrv_SetDesktopWindow(HWND hwnd)
+     set_app_icon();
+ }
+
++/* GetWindowRect(desktop) returns the primary monitor, not the virtual desktop.
++ * Use the server's cached rectangle, which SetDesktopWindow initializes to the
++ * complete desktop, so unchanged multi-monitor layouts do not trigger broadcasts. */
++static BOOL get_virtual_desktop_rect(HWND hwnd, RECT *rect)
++{
++    BOOL ret;
++
++    SERVER_START_REQ(get_window_rectangles)
++    {
++        req->handle = wine_server_user_handle(hwnd);
++        req->relative = COORDS_SCREEN;
++        req->dpi = 0;
++        if ((ret = !wine_server_call(req)))
++        {
++            rect->left = reply->window.left;
++            rect->top = reply->window.top;
++            rect->right = reply->window.right;
++            rect->bottom = reply->window.bottom;
++        }
++    }
++    SERVER_END_REQ;
++    return ret;
++}
++
+ void macdrv_resize_desktop(void)
+ {
+     HWND hwnd = NtUserGetDesktopWindow();
+@@ -1671,7 +1695,7 @@ void macdrv_resize_desktop(void)
+
+     macdrv_reset_device_metrics();
+     new_desktop_rect = macdrv_get_desktop_rect();
+-    if (!NtUserGetWindowRect(hwnd, &current_desktop_rect) ||
++    if (!get_virtual_desktop_rect(hwnd, &current_desktop_rect) ||
+         !CGRectEqualToRect(cgrect_from_rect(current_desktop_rect), new_desktop_rect))
+     {
+         send_message_timeout(HWND_BROADCAST, WM_MACDRV_RESET_DEVICE_METRICS, 0, 0,
